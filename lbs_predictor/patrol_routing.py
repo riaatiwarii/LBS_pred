@@ -5,32 +5,32 @@ Budget-constrained patrol route generation for LBS Predictor.
 
 Design principles
 -----------------
-* Hard route budget: every route <= PATROL_MAX_KM (15 km).
+* Hard route budget: every route <= patrol_max_km (default 20 km).
 * Maximise incident-weighted coverage, not raw waypoint count.
 * Each FRV generates its own route starting and ending at its base.
-* High-priority (high incident weight) waypoints are visited first.
+* The most crime-dense reachable hotspots are visited first, spending
+  the budget where it covers the most incidents per km.
 * When a waypoint would bust the budget, it is skipped.
   If remaining waypoints still exist, a new route is opened for the
   next available FRV.  Routes are never split mid-FRV; leftover
   waypoints wait for the next FRV's route.
 * Output: one row per waypoint visit including start/end base stop.
 
-Algorithm (per FRV)
--------------------
-Step A  Rank all waypoints in the PS by incident weight (desc).
+Algorithm (per FRV) — prize-collecting (orienteering) greedy
+-----------------------------------------------------------
+Step A  Aggregate PS incidents into weighted waypoint cells.
 Step B  Start at FRV base.
-Step C  Greedy nearest-unvisited selection, but only from the
-        top-priority unvisited candidates (priority window = 5).
-        This prevents the route from zigzagging to a far-away
-        high-weight point while a close medium-weight point sits
-        unused.
-Step D  Before adding a waypoint, project the new route length:
-            projected = current_length
-                      + dist(last, candidate)
-                      + dist(candidate, base)   ← return leg
-        If projected > PATROL_MAX_KM → skip this waypoint.
-Step E  After exhausting all visitable waypoints, close the route
-        back to base.
+Step C  Among all unvisited cells that still fit the budget (route incl.
+        return-to-base leg <= patrol_max_km), pick the one with the best
+        coverage-per-km ratio:
+            marginal = dist(current, cand) + dist(cand, base)
+                       - dist(current, base)
+            ratio    = weight / marginal
+        This maximises incident weight covered for each extra km, so the
+        budget is spent on the highest-crime reachable hotspots instead
+        of merely the nearest one.
+Step D  Repeat until no unvisited cell fits the budget.
+Step E  Close the route back to base.
 
 Validation
 ----------
@@ -59,18 +59,12 @@ from .response_time import aerial_distance_km
 logger = logging.getLogger(__name__)
 
 # ── Hard operational limits ──────────────────────────────────────────────────
-PATROL_MAX_KM:  float = 15.0   # every route must be ≤ this
-PATROL_MAX_MIN: float = 60.0   # every route duration must be ≤ this
-
-# Priority window: how many top-weight unvisited waypoints are
-# eligible for the "nearest" selection at each step.
-# Prevents both pure-greedy-weight (ignores distance) and
-# pure-greedy-nearest (ignores hotspot priority).
-_PRIORITY_WINDOW: int = 5
+PATROL_MAX_KM:  float = 20.0   # every route must be ≤ this (fallback; see Settings)
+PATROL_MAX_MIN: float = 60.0   # every route duration must be ≤ this (fallback; see Settings)
 
 # Maximum waypoints to build the candidate pool from for a single PS.
 # Keeps runtime O(manageable) even for huge urban PS.
-_MAX_CANDIDATES: int = 200
+_MAX_CANDIDATES: int = 400
 
 
 # ── Distance helper ──────────────────────────────────────────────────────────
@@ -130,7 +124,6 @@ def _build_one_route(
 
     # Track which indices have been visited
     visited: set[int] = set()
-    total_weight = sum(w["weight"] for w in waypoints)
 
     # Base — departure
     stops.append({
@@ -140,46 +133,36 @@ def _build_one_route(
     })
 
     while True:
-        # Eligible: top _PRIORITY_WINDOW unvisited by weight rank
-        eligible_indices = [
-            i for i in range(len(waypoints))
-            if i not in visited
-        ][:_PRIORITY_WINDOW]
+        # Prize-collecting selection: among all unvisited cells that still fit
+        # the budget (route incl. return-to-base leg ≤ max_km), pick the one
+        # with the best coverage-per-km ratio (weight / marginal distance).
+        leg_back_from_current = _dist(
+            current_lat, current_lon, base_lat, base_lon, settings
+        )
 
-        if not eligible_indices:
-            break  # no more waypoints to consider
-
-        # Among eligible, pick nearest to current position
-        def _projected(i: int) -> float:
+        best_i = -1
+        best_ratio = -1.0
+        best_leg = 0.0
+        for i in range(len(waypoints)):
+            if i in visited:
+                continue
             wp = waypoints[i]
             leg_to   = _dist(current_lat, current_lon, wp["lat"], wp["lon"], settings)
             leg_back = _dist(wp["lat"], wp["lon"], base_lat, base_lon, settings)
-            return cumulative + leg_to + leg_back
+            if cumulative + leg_to + leg_back > max_km:
+                continue  # would bust the budget — infeasible
+            marginal = max(leg_to + leg_back - leg_back_from_current, 1e-6)
+            ratio = wp["weight"] / marginal
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_i = i
+                best_leg = leg_to
 
-        best_i = min(eligible_indices, key=lambda i: _dist(
-            current_lat, current_lon,
-            waypoints[i]["lat"], waypoints[i]["lon"],
-            settings,
-        ))
-
-        if _projected(best_i) > max_km:
-            # This waypoint busts the budget; mark visited so we skip it
-            # in future iterations of *this* route, but leave it in the
-            # list so the caller can open a new route for it.
-            # Actually: skip it in this route (don't mark visited globally).
-            # Try remaining eligible ones too.
-            skipped_all = True
-            for i in eligible_indices:
-                if _projected(i) <= max_km:
-                    best_i = i
-                    skipped_all = False
-                    break
-            if skipped_all:
-                break  # nothing fits; close route
+        if best_i < 0:
+            break  # nothing else fits the budget; close the route
 
         wp = waypoints[best_i]
-        leg = _dist(current_lat, current_lon, wp["lat"], wp["lon"], settings)
-        cumulative += leg
+        cumulative += best_leg
         current_lat, current_lon = wp["lat"], wp["lon"]
         visited.add(best_i)
 
@@ -220,8 +203,8 @@ def generate_patrol_routes(
     settings: Settings,
     final_locations: pd.DataFrame,
     incidents: pd.DataFrame,
-    max_km: float = PATROL_MAX_KM,
-    max_min: float = PATROL_MAX_MIN,
+    max_km: float | None = None,
+    max_min: float | None = None,
 ) -> pd.DataFrame:
     """
     Generate budget-constrained patrol routes.
@@ -231,8 +214,8 @@ def generate_patrol_routes(
     settings        : project Settings
     final_locations : DataFrame with columns [frv_id (optional), ps, latitude, longitude]
     incidents       : incident DataFrame with columns [ps, latitude, longitude]
-    max_km          : hard route length limit (default 15 km)
-    max_min         : hard duration limit in minutes (default 60 min)
+    max_km          : hard route length limit; defaults to settings.patrol_max_km (20 km)
+    max_min         : hard duration limit in minutes; defaults to settings.patrol_max_min (60 min)
 
     Returns
     -------
@@ -240,9 +223,14 @@ def generate_patrol_routes(
         frv_id, route_id, stop_seq, stop_type,
         latitude, longitude,
         cumulative_dist_km, total_route_km,
-        est_duration_min, incident_weight,
+        est_duration_min, incident_weight, crime_coefficient,
         coverage_pct, valid
     """
+    if max_km is None:
+        max_km = getattr(settings, "patrol_max_km", PATROL_MAX_KM)
+    if max_min is None:
+        max_min = getattr(settings, "patrol_max_min", PATROL_MAX_MIN)
+
     logger.info("")
     logger.info("=" * 65)
     logger.info("PATROL ROUTE GENERATION")
@@ -265,6 +253,8 @@ def generate_patrol_routes(
         # Build ranked waypoints once for this PS
         waypoints = _build_waypoints(ps_inc)
         total_ps_weight = sum(w["weight"] for w in waypoints)
+        # Crime coefficient normaliser: the busiest cell in this PS = 1.0
+        ps_max_weight = max((w["weight"] for w in waypoints), default=0)
 
         if not waypoints:
             continue
@@ -316,6 +306,11 @@ def generate_patrol_routes(
             )
 
             for seq, stop in enumerate(stops, 1):
+                crime_coeff = (
+                    round(stop["weight"] / ps_max_weight, 4)
+                    if ps_max_weight and stop["stop_type"] == "WAYPOINT"
+                    else 0.0
+                )
                 all_rows.append({
                     "frv_id":              frv_id,
                     "route_id":            global_route_id,
@@ -327,6 +322,7 @@ def generate_patrol_routes(
                     "total_route_km":      round(route_km, 3),
                     "est_duration_min":    est_duration,
                     "incident_weight":     stop["weight"],
+                    "crime_coefficient":   crime_coeff,
                     "coverage_pct":        cov_pct,
                     "valid":               valid,
                     "ps":                  ps,

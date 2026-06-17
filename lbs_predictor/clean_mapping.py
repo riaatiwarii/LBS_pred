@@ -40,6 +40,9 @@ def generate_clean_map(settings: Settings) -> str:
     _attach_patrol_metrics(frv_points, patrol_routes)
     _attach_patrol_metrics(optimized_frv_points, patrol_routes)
 
+    patrol_coverage = _load_patrol_coverage(settings, ps_lookup)
+    crime_index = _load_crime_index(settings)
+
     center_lat, center_lon = _map_center(frv_points, settings)
     all_bounds = _combined_bounds(district_bounds.values())
 
@@ -55,6 +58,8 @@ def generate_clean_map(settings: Settings) -> str:
         "transferRows":     transfer_rows,
         "resimulationRows": resimulation_rows,
         "patrolRoutes":     patrol_routes,
+        "patrolCoverage":   patrol_coverage,
+        "crimeIndex":       crime_index,
         "psPoints":         ps_points,
         "allBounds":        all_bounds,
         "defaultCenter":    [center_lat, center_lon],
@@ -215,6 +220,7 @@ def _load_patrol_routes(settings: Settings, ps_lookup: list[dict]) -> list[dict]
                 "stopSeq": _safe_int(row.get("stop_seq")),
                 "stopType": stop_type,
                 "incidentWeight": _safe_float(row.get("incident_weight")) or 0,
+                "crimeCoefficient": _safe_float(row.get("crime_coefficient")) or 0,
                 "cumulativeDistKm": _safe_float(row.get("cumulative_dist_km")) or 0,
             })
 
@@ -223,6 +229,11 @@ def _load_patrol_routes(settings: Settings, ps_lookup: list[dict]) -> list[dict]
 
         first = route_df.iloc[0].to_dict()
         ps = str(first.get("ps") or "").strip()
+        max_crime = max(
+            (p.get("crimeCoefficient") or 0 for p in points
+             if str(p.get("stopType") or "").upper() == "WAYPOINT"),
+            default=0,
+        )
         route = {
             "routeId": str(route_id),
             "frvId": str(first.get("frv_id") or ""),
@@ -232,12 +243,87 @@ def _load_patrol_routes(settings: Settings, ps_lookup: list[dict]) -> list[dict]
             "routeLengthKm": _safe_float(first.get("total_route_km")) or 0,
             "durationMin": _safe_float(first.get("est_duration_min")) or 0,
             "coverage": _safe_float(first.get("coverage_pct")) or 0,
+            "maxCrimeCoefficient": round(max_crime, 4),
             "waypointCount": waypoint_count,
             "valid": _safe_bool(first.get("valid")),
         }
         routes.append(route)
 
     return routes
+
+
+def _load_patrol_coverage(settings: Settings, ps_lookup: list[dict]) -> dict:
+    """Aggregate incident coverage from patrol_route_stats.csv.
+
+    Returns {"overall": pct, "perPs": {...}, "perDistrict": {...}}.
+    Coverage is the share of incident-weighted hotspots visited by patrols.
+    """
+    empty = {"overall": 0.0, "perPs": {}, "perDistrict": {}}
+    path = settings.output_dir / "patrol_route_stats.csv"
+    if not path.exists():
+        return empty
+
+    df = pd.read_csv(path).fillna(0)
+    if df.empty or "covered_weight" not in df.columns or "total_weight" not in df.columns:
+        return empty
+
+    ps_to_district = {}
+    for item in ps_lookup:
+        ps_to_district.setdefault(item["ps"], item["district"])
+
+    per_ps: dict[str, float] = {}
+    district_covered: dict[str, float] = {}
+    district_total: dict[str, float] = {}
+    total_covered = 0.0
+    total_weight = 0.0
+
+    for row in df.to_dict("records"):
+        ps = str(row.get("ps") or "").strip()
+        covered = _safe_float(row.get("covered_weight")) or 0
+        total = _safe_float(row.get("total_weight")) or 0
+        per_ps[ps] = _safe_float(row.get("ps_coverage_pct")) or 0
+        district = ps_to_district.get(ps, "")
+        district_covered[district] = district_covered.get(district, 0.0) + covered
+        district_total[district] = district_total.get(district, 0.0) + total
+        total_covered += covered
+        total_weight += total
+
+    per_district = {
+        d: round(district_covered[d] / max(district_total[d], 1) * 100, 1)
+        for d in district_covered
+    }
+    overall = round(total_covered / max(total_weight, 1) * 100, 1)
+    return {"overall": overall, "perPs": per_ps, "perDistrict": per_district}
+
+
+def _load_crime_index(settings: Settings) -> dict:
+    """Expose demand_score (0–1) from demand analysis as a crime coefficient.
+
+    Returns {"perPs": {...}, "perDistrict": {...}}.
+    """
+    result = {"perPs": {}, "perDistrict": {}}
+    ps_path = settings.output_dir / "ps_demand.csv"
+    district_path = settings.output_dir / "district_demand.csv"
+
+    if ps_path.exists():
+        df = pd.read_csv(ps_path).fillna(0)
+        key = "ps" if "ps" in df.columns else df.columns[0]
+        if "demand_score" in df.columns:
+            for row in df.to_dict("records"):
+                result["perPs"][str(row.get(key) or "").strip()] = round(
+                    _safe_float(row.get("demand_score")) or 0, 4
+                )
+
+    if district_path.exists():
+        df = pd.read_csv(district_path).fillna(0)
+        key = "district" if "district" in df.columns else df.columns[0]
+        if "demand_score" in df.columns:
+            for row in df.to_dict("records"):
+                result["perDistrict"][str(row.get(key) or "").strip()] = round(
+                    _safe_float(row.get("demand_score")) or 0, 4
+                )
+
+    return result
 
 
 # ---------------------------------------------------------------------------

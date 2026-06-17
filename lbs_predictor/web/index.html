@@ -66,6 +66,8 @@
 
     <!-- Patrolling panel -->
     <section class="panel" id="patrol-panel">
+      <div id="patrol-coverage-badge" class="coverage-badge" style="display:none"></div>
+
       <label class="field-label" for="patrol-district">District</label>
       <select class="map-select" id="patrol-district">
         <option value="">— Select District —</option>
@@ -110,6 +112,13 @@
       <div class="legend-row"><span style="color:#1e90ff;font-size:16px">⬟</span><span>Patrol zone territory</span></div>
       <div class="legend-row"><span style="font-size:14px">⚪</span>    <span>Patrol waypoint stop</span></div>
       <div class="legend-row"><span style="font-size:14px">🚓</span>    <span>Animated patrol car</span></div>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:8px 0">
+      <div class="legend-row"><b>Crime coefficient (waypoint)</b></div>
+      <div class="legend-row"><span class="legend-dot" style="background:#b91c1c"></span> <span>Highest crime (peak hotspot)</span></div>
+      <div class="legend-row"><span class="legend-dot" style="background:#ef4444"></span> <span>High</span></div>
+      <div class="legend-row"><span class="legend-dot" style="background:#f97316"></span> <span>Medium</span></div>
+      <div class="legend-row"><span class="legend-dot" style="background:#facc15"></span> <span>Lower</span></div>
+      <div class="legend-row"><span style="font-size:11px;color:#64748b">Bigger dot = higher crime; coverage % = share of weighted incidents patrolled</span></div>
     </section>
 
   </div><!-- #map-ui -->

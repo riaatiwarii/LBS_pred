@@ -47,6 +47,7 @@ async function initPatrol(map) {
   populatePatrolDistricts();
   wirePatrolControls(map);
   wirePatrolFilterControls();
+  renderCoverageBadge();
 
   if (!payload.patrolRoutes.length) {
     const stats = document.getElementById("patrol-route-stats");
@@ -61,6 +62,42 @@ async function initPatrol(map) {
 // ── map_data.json accessors ──────────────────────
 function getPatrolPayload() {
   return window._lbsMapPayload || {};
+}
+
+// Show overall incident-coverage badge at the top of the patrol panel.
+function renderCoverageBadge() {
+  const el = document.getElementById("patrol-coverage-badge");
+  if (!el) return;
+  const overall = getPatrolPayload().patrolCoverage?.overall;
+  if (overall == null) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.innerHTML =
+    `Patrols cover <b>${Number(overall).toFixed(1)}%</b> of weighted incidents ` +
+    `across all stations.`;
+}
+
+// Case/whitespace-tolerant lookup into a {name: value} map.
+function lookupByName(map, name) {
+  if (!map) return undefined;
+  if (map[name] != null) return map[name];
+  const norm = normalizeName(name);
+  for (const k in map) {
+    if (normalizeName(k) === norm) return map[k];
+  }
+  return undefined;
+}
+
+// Crime-coefficient visual scale (0 = low, 1 = busiest cell in the PS).
+function crimeColor(coeff) {
+  const c = Math.max(0, Math.min(1, Number(coeff) || 0));
+  if (c >= 0.75) return "#b91c1c";  // deep red — peak hotspot
+  if (c >= 0.50) return "#ef4444";  // red
+  if (c >= 0.25) return "#f97316";  // orange
+  return "#facc15";                 // amber — lower
+}
+function crimeRadius(coeff) {
+  const c = Math.max(0, Math.min(1, Number(coeff) || 0));
+  return 4 + c * 6;                 // 4–10 px by intensity
 }
 
 function patrolRoutesAll() {
@@ -162,9 +199,14 @@ function onPatrolDistrict(map) {
   // District stats derived from backend patrol routes
   const psWithRoutes = [...new Set(routes.map(r => r.ps).filter(Boolean))];
   const totalLen = routes.reduce((s, r) => s + (Number(r.routeLengthKm) || 0), 0);
+  const distCov = lookupByName(payload.patrolCoverage?.perDistrict, district);
+  const distCrime = lookupByName(payload.crimeIndex?.perDistrict, district);
+  let distExtra = "";
+  if (distCov != null) distExtra += `  |  Incident coverage: ${Number(distCov).toFixed(1)}%`;
+  if (distCrime != null) distExtra += `  |  Crime index: ${Number(distCrime).toFixed(2)}`;
   stats.textContent =
     `Patrol routes: ${routes.length}  |  Police stations: ${psWithRoutes.length}  |  ` +
-    `Total length: ${totalLen.toFixed(1)} km`;
+    `Total length: ${totalLen.toFixed(1)} km` + distExtra;
 
   // Fit to district
   const db = (payload.districtBounds || {})[district];
@@ -248,7 +290,14 @@ async function onPatrolPs(map) {
     r.district === district && normalizeName(r.ps) === normalizeName(ps)
   );
   const summary = renderBackendRoutes(routes, bounds);
-  stats.innerHTML = summary || `No backend patrol routes found for <b>${esc(ps)}</b>.`;
+  let psExtra = "";
+  const psCov = lookupByName(getPatrolPayload().patrolCoverage?.perPs, ps);
+  const psCrime = lookupByName(getPatrolPayload().crimeIndex?.perPs, ps);
+  if (psCov != null) psExtra += `<br>Incident coverage: <b>${Number(psCov).toFixed(1)}%</b>`;
+  if (psCrime != null) psExtra += `<br>Crime index: <b>${Number(psCrime).toFixed(2)}</b>`;
+  stats.innerHTML = summary
+    ? summary + psExtra
+    : `No backend patrol routes found for <b>${esc(ps)}</b>.`;
 
   applyPatrolToggles();
   if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
@@ -274,10 +323,15 @@ function renderBackendRoutes(routes, bounds) {
     (route.points || []).forEach(pt => {
       if (String(pt.stopType || "").toUpperCase() !== "WAYPOINT") return;
       waypointCount += 1;
+      const coeff = Number(pt.crimeCoefficient) || 0;
       const marker = L.circleMarker([pt.lat, pt.lon], {
-        radius: 4, color: "#ef5555", fillColor: "#ffffff", fillOpacity: 0.9, weight: 1.5,
+        radius: crimeRadius(coeff), color: crimeColor(coeff),
+        fillColor: crimeColor(coeff), fillOpacity: 0.85, weight: 1.5,
       });
-      marker.bindTooltip("Stop #" + (pt.stopSeq != null ? pt.stopSeq : ""));
+      marker.bindTooltip(
+        "Stop #" + (pt.stopSeq != null ? pt.stopSeq : "") +
+        " · crime " + Math.round(coeff * 100) + "%"
+      );
       marker.bindPopup(buildWaypointPopup(route, pt));
       addPatrolLayer(marker, "waypoint", true);
       if (bounds) bounds.extend([pt.lat, pt.lon]);
@@ -305,6 +359,7 @@ function buildWaypointPopup(route, pt) {
       <tr><td style="color:#66717d">Police Station:</td><td style="text-align:right"><b>${esc(route.ps || "N/A")}</b></td></tr>
       <tr><td style="color:#66717d">Stop #:</td><td style="text-align:right"><b>${esc(pt.stopSeq != null ? pt.stopSeq : "")}</b></td></tr>
       <tr><td style="color:#66717d">Incident weight:</td><td style="text-align:right"><b>${Number(pt.incidentWeight || 0).toFixed(2)}</b></td></tr>
+      <tr><td style="color:#66717d">Crime coefficient:</td><td style="text-align:right"><b>${Math.round((Number(pt.crimeCoefficient) || 0) * 100)}%</b></td></tr>
       <tr><td style="color:#66717d">Cumulative dist:</td><td style="text-align:right"><b>${Number(pt.cumulativeDistKm || 0).toFixed(2)} km</b></td></tr>
     </table></div>`;
 }
@@ -337,6 +392,7 @@ function buildBackendRoutePopup(route, distanceKm, durationMin) {
       <tr><td style="color:#66717d">Patrol time:</td><td style="text-align:right"><b>${Math.round(durationMin)} min</b></td></tr>
       <tr><td style="color:#66717d">Waypoints:</td><td style="text-align:right"><b>${Number(route.waypointCount || 0)}</b></td></tr>
       <tr><td style="color:#66717d">Coverage:</td><td style="text-align:right"><b>${Number(route.coverage || 0).toFixed(1)}%</b></td></tr>
+      <tr><td style="color:#66717d">Peak crime coeff:</td><td style="text-align:right"><b>${Math.round((Number(route.maxCrimeCoefficient) || 0) * 100)}%</b></td></tr>
     </table></div>`;
 }
 

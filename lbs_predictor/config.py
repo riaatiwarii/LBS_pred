@@ -17,6 +17,10 @@ class Settings:
     target_max_radius_km: float = 12.0
     road_factor: float = 2.3
     frv_avg_speed_kph: float = 30.0
+
+    # Patrol routing budget (per FRV route).
+    patrol_max_km: float = 20.0
+    patrol_max_min: float = 60.0
     response_time_sample_points: int = 5
     use_osrm_driving_time: bool = False
     osrm_base_url: str = "http://router.project-osrm.org"
