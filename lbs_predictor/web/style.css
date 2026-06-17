@@ -1,0 +1,236 @@
+/* =========================================================
+   LBS Predictor – Clean Map  |  style.css
+   ========================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --panel-bg:     rgba(255, 255, 255, 0.96);
+  --panel-border: rgba(20, 36, 52, 0.16);
+  --ink:          #17212b;
+  --muted:        #66717d;
+  --blue:         #1f6feb;
+  --orange:       #f97316;
+  --green:        #159947;
+  --red:          #dc2626;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
+}
+
+/* ── Map container ── */
+#map {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── Floating UI wrapper ── */
+#map-ui {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 1200;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbar-btn {
+  min-height: 38px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--ink);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.toolbar-btn:hover  { background: #f1f5f9; }
+.toolbar-btn.active { background: #17212b; color: #fff; }
+
+/* ── Panels ── */
+.panel {
+  display: none;
+  width: min(360px, calc(100vw - 36px));
+  margin-top: 8px;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.22);
+}
+.panel.open { display: block; }
+
+/* ── Form elements ── */
+.field-label {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.map-select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(23, 33, 43, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.map-select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.selection-note {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ── Legend rows ── */
+.legend-row {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin: 9px 0;
+  font-size: 13px;
+}
+
+.legend-line {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid var(--blue);
+}
+.legend-line.ps       { border-top-color: var(--orange); }
+.legend-line.selected { border-top-color: #e11d48; border-top-width: 5px; }
+
+.legend-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--green);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(21, 153, 71, 0.4);
+}
+.legend-dot.warn {
+  background: var(--red);
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.35);
+}
+.legend-dot.current,
+.legend-dot.green {
+  background: var(--green);
+  box-shadow: 0 0 0 2px rgba(21, 153, 71, 0.35);
+}
+.legend-dot.yellow {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
+}
+.legend-dot.red {
+  background: var(--red);
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.35);
+}
+.legend-dot.optimized {
+  background: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.35);
+}
+.legend-dot.newly-added {
+  background: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.35);
+}
+.legend-dot.transfer {
+  width: 18px;
+  height: 8px;
+  border-radius: 3px;
+  background: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+}
+
+.legend-square {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--blue);
+}
+
+.legend-line.route {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid #16a34a;
+}
+.legend-line.heatmap {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid #f59e0b;
+}
+
+/* ── Loading / error overlay ── */
+#loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-size: 15px;
+  color: var(--muted);
+}
+#loading-overlay.hidden { display: none; }
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid #e2e8f0;
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  #map-ui {
+    left: 10px;
+    right: 10px;
+  }
+  .panel {
+    width: calc(100vw - 20px);
+  }
+}
+
+
+ 
+.patrol-loading {
+  opacity: 0.5;
+  pointer-events: none;
+}
