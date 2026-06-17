@@ -114,6 +114,18 @@ html, body {
   line-height: 1.4;
 }
 
+.coverage-badge {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
 /* ── Legend rows ── */
 .legend-row {
   display: grid;
