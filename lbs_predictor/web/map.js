@@ -194,7 +194,6 @@ function addPointLayers() {
     layers.optimizedFrvMarkers.push(marker);
   });
 
-  buildTransferLayers(payload.transferLines);
   buildResponseHeatmap();
   // Initial render of visible markers
   updateVisibleFrvs();
