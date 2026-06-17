@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LBS Predictor – FRV &amp; PS Explorer</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+  <!-- Map styles -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Map canvas -->
+  <div id="map"></div>
+
+  <!-- Loading / error overlay -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <span id="loading-text">Loading map data…</span>
+  </div>
+
+  <!-- Floating UI -->
+  <div id="map-ui">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <button class="toolbar-btn" id="area-btn"          type="button">Area Explorer</button>
+      <button class="toolbar-btn" id="filter-btn"        type="button">Filters</button>
+      <button class="toolbar-btn" id="patrol-btn"        type="button">Patrolling</button>
+      <button class="toolbar-btn" id="deployment-btn"    type="button">Deployment View</button>
+      <button class="toolbar-btn" id="legend-btn"        type="button">Notation</button>
+    </div>
+
+    <!-- Area Explorer panel -->
+    <section class="panel" id="area-panel">
+      <label class="field-label" for="district-select">District</label>
+      <select class="map-select" id="district-select"></select>
+
+      <label class="field-label" for="ps-select">Police Station</label>
+      <select class="map-select" id="ps-select" disabled></select>
+
+      <p class="selection-note" id="selection-note">
+        Select a district to filter police stations and FRVs.
+      </p>
+    </section>
+
+    <!-- Filters panel -->
+    <section class="panel" id="filter-panel">
+      <label class="check-row"><input id="toggle-districts"        type="checkbox" checked> District boundaries</label>
+      <label class="check-row"><input id="toggle-ps"               type="checkbox" checked> Police-station boundaries</label>
+      <label class="check-row"><input id="toggle-ps-markers"       type="checkbox" checked> Police-station markers</label>
+      <label class="check-row"><input id="toggle-current-frvs"     type="checkbox" checked> Current FRVs</label>
+      <label class="check-row"><input id="toggle-optimized-frvs"   type="checkbox"> Optimized FRVs</label>
+      <label class="check-row"><input id="toggle-transfers"        type="checkbox"> Transfers</label>
+      <label class="check-row"><input id="toggle-heatmap-current"  type="checkbox"> Current response heatmap</label>
+      <label class="check-row"><input id="toggle-heatmap-optimized"type="checkbox"> Optimized response heatmap</label>
+      <label class="check-row"><input id="toggle-patrol-territory" type="checkbox" checked> Patrol territories</label>
+      <label class="check-row"><input id="toggle-waypoints"        type="checkbox" checked> Waypoints</label>
+      <label class="check-row"><input id="toggle-patrol-routes"    type="checkbox" checked> Patrol routes</label>
+      <label class="check-row"><input id="toggle-patrol-animation" type="checkbox"> Patrol vehicle animation</label>
+    </section>
+
+    <!-- Patrolling panel -->
+    <section class="panel" id="patrol-panel">
+      <label class="field-label" for="patrol-district">District</label>
+      <select class="map-select" id="patrol-district">
+        <option value="">— Select District —</option>
+      </select>
+
+      <div id="patrol-dist-stats" class="selection-note" style="color:#f97316;font-weight:600"></div>
+
+      <label class="field-label" for="patrol-ps">Police Station</label>
+      <select class="map-select" id="patrol-ps" disabled>
+        <option value="">— Select District first —</option>
+      </select>
+
+      
+
+      <div id="patrol-route-stats" class="selection-note" style="margin-top:10px;color:#16a34a"></div>
+    </section>
+
+    <!-- Deployment View panel -->
+    <section class="panel" id="deployment-panel">
+      <div class="field-label">Deployment View</div>
+      <label class="check-row"><input type="radio" name="deployment-mode" value="current" checked> Current Deployment</label>
+      <label class="check-row"><input type="radio" name="deployment-mode" value="optimized"> Optimized Deployment</label>
+      <p class="selection-note" id="deployment-note">Showing current deployment layer with current FRV locations and response metrics.</p>
+    </section>
+
+    <!-- Patrolling panel -->
+
+    <!-- Legend panel -->
+    <section class="panel" id="legend-panel">
+      <div class="legend-row"><span class="legend-line"></span>          <span>District boundary</span></div>
+      <div class="legend-row"><span class="legend-line ps"></span>       <span>Police-station boundary</span></div>
+      <div class="legend-row"><span class="legend-line selected"></span> <span>Selected police-station boundary</span></div>
+      <div class="legend-row"><span class="legend-square"></span>        <span>Police-station location</span></div>
+      <div class="legend-row"><span class="legend-dot green"></span> <span>FRV avg response <= 5 min</span></div>
+      <div class="legend-row"><span class="legend-dot yellow"></span> <span>FRV avg response 5-10 min</span></div>
+      <div class="legend-row"><span class="legend-dot red"></span> <span>FRV avg response > 10 min</span></div>
+      <div class="legend-row"><span class="legend-dot transfer"></span>  <span>Transfer arrow</span></div>
+      <div class="legend-row" id="legend-new-frv"><span class="legend-dot newly-added"></span> <span>Newly added FRV</span></div>
+      <div class="legend-row"><span class="legend-line route"></span>        <span>Patrol route</span></div>
+      <div class="legend-row"><span class="legend-line heatmap"></span>      <span>Response heatmap</span></div>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:8px 0">
+      <div class="legend-row"><span style="color:#1e90ff;font-size:16px">⬟</span><span>Patrol zone territory</span></div>
+      <div class="legend-row"><span style="font-size:14px">⚪</span>    <span>Patrol waypoint stop</span></div>
+      <div class="legend-row"><span style="font-size:14px">🚓</span>    <span>Animated patrol car</span></div>
+    </section>
+
+  </div><!-- #map-ui -->
+
+  <!-- Map logic -->
+  <script src="map.js"></script>
+  <script src="patrol.js"></script>
+</body>
+</html>
