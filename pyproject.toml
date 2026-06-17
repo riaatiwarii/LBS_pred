@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lbs-predictor"
+version = "0.1.0"
+description = "District-wise LBS hotspot and FRV response-time optimization pipeline"
+requires-python = ">=3.10"
+dependencies = [
+  "pandas",
+  "numpy",
+  "scikit-learn",
+  "hdbscan",
+  "folium",
+  "geopandas",
+  "shapely",
+  "requests",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lbs_predictor*"]

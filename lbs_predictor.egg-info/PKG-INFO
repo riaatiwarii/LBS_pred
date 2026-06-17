@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: lbs-predictor
+Version: 0.1.0
+Summary: District-wise LBS hotspot and FRV response-time optimization pipeline
+Requires-Python: >=3.10
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: scikit-learn
+Requires-Dist: hdbscan
+Requires-Dist: folium
+Requires-Dist: geopandas
+Requires-Dist: shapely
+Requires-Dist: requests
